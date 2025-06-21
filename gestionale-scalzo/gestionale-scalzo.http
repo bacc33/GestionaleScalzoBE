@@ -1,0 +1,6 @@
+@gestionale_scalzo_HostAddress = http://localhost:5224
+
+GET {{gestionale_scalzo_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
