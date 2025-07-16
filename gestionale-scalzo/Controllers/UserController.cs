@@ -15,7 +15,7 @@ namespace gestionale_scalzo.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class UserController : ControllerBase
+    public class UserController : Controller
     {
         private readonly IUserRepository _userRepo;
         protected APIResponse _response;

@@ -10,8 +10,12 @@ namespace gestionale_scalzo.Data
             : base(options) { }
 
         public DbSet<ApplicationUser> ApplicationUsers { get; set; }
+
+        public DbSet<Client> Clients { get; set; }
         public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
+        public DbSet<Order> Orders { get; set; }
+        public DbSet<Tipologia> Tipologie{ get; set; }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);

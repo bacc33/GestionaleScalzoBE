@@ -52,101 +52,120 @@ namespace gestionale_scalzo.Repository
 
         #region UTENTI
 
-        public async Task<APIResponse> Upsert(RegisterRequestDTO registerationRequestDTO)
+        public async Task<APIResponse> Upsert(RegisterRequestDTO dto)
         {
-            APIResponse response = new APIResponse();
-            IdentityResult result;
-            ApplicationUser? user;
-            string temporaryPassword = string.Empty;
-            IEnumerable<IdentityError> _errors = new List<IdentityError>();
+            var response = new APIResponse();
 
             try
             {
-                //si tratta di una modifica utente
-                if (!string.IsNullOrEmpty(registerationRequestDTO.Id))
-                {
-                    user = await _userManager.FindByIdAsync(registerationRequestDTO.Id);
+                IdentityResult result;
+                ApplicationUser user;
+                string temporaryPassword = string.Empty;
 
-                    // Update it with the values from the view model
-                    user.Name = registerationRequestDTO.Name;
-                    user.Surname = registerationRequestDTO.Surname;
-                    user.UserName = registerationRequestDTO.Username;
-                    user.Email = registerationRequestDTO.Email;
-                    user.PhoneNumber = registerationRequestDTO.PhoneNumber;
+                // --- UPDATE
+                if (!string.IsNullOrEmpty(dto.Id))
+                {
+                    user = await _userManager.FindByIdAsync(dto.Id);
+                    if (user == null)
+                    {
+                        response.StatusCode = HttpStatusCode.NotFound;
+                        response.IsSuccess = false;
+                        response.ErrorMessages = new List<string> { "Utente non trovato" };
+                        return response;
+                    }
+
+                    // Mappa i campi modificabili
+                    user.Name = dto.Name;
+                    user.Surname = dto.Surname;
+                    user.UserName = dto.Username;
+                    user.Email = dto.Email;
+                    user.PhoneNumber = dto.PhoneNumber;
 
                     result = await _userManager.UpdateAsync(user);
+                    if (!result.Succeeded)
+                    {
+                        response.StatusCode = HttpStatusCode.BadRequest;
+                        response.IsSuccess = false;
+                        response.ErrorMessages = result.Errors.Select(e => e.Description).ToList();
+                        return response;
+                    }
                 }
+                // --- INSERT
                 else
                 {
-                    //si tratta di un nuovo utente
-                    //email e nome utente associati all'utente devono essere unici
-                    if ((IsUniqueUser(registerationRequestDTO.Username).Result == true) && (_userManager.FindByEmailAsync(registerationRequestDTO.Email).Result == null))
-                    {
-                        user = new ApplicationUser()
-                        {
-                            UserName = registerationRequestDTO.Username,
-                            Email = registerationRequestDTO.Email,
-                            NormalizedEmail = registerationRequestDTO.Email.ToUpper(),
-                            Name = registerationRequestDTO.Name,
-                            Surname = registerationRequestDTO.Surname,
-                            PhoneNumber = registerationRequestDTO.PhoneNumber,
-                            FirstAccess = true,
-                            Attivo = true,
+                    bool usernameUnique = await IsUniqueUser(dto.Username);
+                    var emailExists = await _userManager.FindByEmailAsync(dto.Email) != null;
 
-                        };
-
-                        temporaryPassword = CreateTemporaryPassword();
-                        result = await _userManager.CreateAsync(user, temporaryPassword);
-                    }
-                    else
+                    if (!usernameUnique || emailExists)
                     {
-                        response.Result = Costanti.KO;
                         response.StatusCode = HttpStatusCode.BadRequest;
-                        response.ErrorMessages = new List<string>() { "Esiste già un'utenza associata ai dati forniti" };
                         response.IsSuccess = false;
+                        response.ErrorMessages = new List<string> { "Esiste già un'utenza associata ai dati forniti" };
+                        return response;
+                    }
+
+                    user = new ApplicationUser
+                    {
+                        UserName = dto.Username,
+                        Email = dto.Email,
+                        NormalizedEmail = dto.Email.ToUpper(),
+                        Name = dto.Name,
+                        Surname = dto.Surname,
+                        PhoneNumber = dto.PhoneNumber,
+                        FirstAccess = true,
+                        Attivo = true
+                    };
+
+                    temporaryPassword = CreateTemporaryPassword();
+                    result = await _userManager.CreateAsync(user, temporaryPassword);
+                    if (!result.Succeeded)
+                    {
+                        response.StatusCode = HttpStatusCode.BadRequest;
+                        response.IsSuccess = false;
+                        response.ErrorMessages = result.Errors.Select(e => e.Description).ToList();
                         return response;
                     }
                 }
 
-                if (result.Succeeded)
+                // Assicuriamoci che i ruoli esistano
+                if (!await _roleManager.RoleExistsAsync("Amministratore"))
                 {
-                    if (!_roleManager.RoleExistsAsync("Amministratore").GetAwaiter().GetResult())
-                    {
-                        await _roleManager.CreateAsync(new ApplicationRole() { Name = "Amministratore", Descrizione = "Amministratore" });
-                        await _roleManager.CreateAsync(new ApplicationRole() { Name = "Magazzino", Descrizione = "Magazzino" });
-                    }
-
-                    // verifico se l'utente ha un ruolo assegnato
-                    string role = _userManager.GetRolesAsync(user).Result.FirstOrDefault();
-                    if (!string.IsNullOrEmpty(role))
-                    {
-                        await _userManager.RemoveFromRoleAsync(user, role);
-                    }
-
-                    await _userManager.AddToRoleAsync(user, registerationRequestDTO.Role);
-                    SendEmail(user.Email, String.IsNullOrEmpty(temporaryPassword) ? "Dati utente modificati" : "Benvenuto nel portale Legend", String.IsNullOrEmpty(temporaryPassword) ? "EmailModificaDatiUtente" : "EmailBenvenuto", user.UserName, passwordTemporanea: String.IsNullOrEmpty(temporaryPassword) ? "" : temporaryPassword);
-
-                    var userToReturn = _db.ApplicationUsers
-                        .FirstOrDefault(u => u.UserName == registerationRequestDTO.Username);
-
-                    response.Result = Costanti.DatabaseOK;
-                    response.StatusCode = HttpStatusCode.OK;
-                    response.IsSuccess = true;
+                    await _roleManager.CreateAsync(new ApplicationRole { Name = "Amministratore", Descrizione = "Amministratore" });
+                    await _roleManager.CreateAsync(new ApplicationRole { Name = "Ragioniere", Descrizione = "Ragioniere" });
+                    await _roleManager.CreateAsync(new ApplicationRole { Name = "Magazziniere", Descrizione = "Magazziniere" });
                 }
-                else
-                {
-                    _errors = result.Errors;
-                }
+
+                // Rimuovo vecchio ruolo (se presente) e aggiungo il nuovo
+                var oldRole = (await _userManager.GetRolesAsync(user)).FirstOrDefault();
+                if (!string.IsNullOrEmpty(oldRole))
+                    await _userManager.RemoveFromRoleAsync(user, oldRole);
+
+                await _userManager.AddToRoleAsync(user, dto.Role);
+
+                // Invia email di benvenuto o modifica
+                SendEmail(
+                    user.Email,
+                    string.IsNullOrEmpty(temporaryPassword) ? "Dati utente modificati" : "Benvenuto nel portale ScalzoFruit",
+                    string.IsNullOrEmpty(temporaryPassword) ? "EmailModificaDatiUtente" : "EmailBenvenuto",
+                    user.UserName,
+                    passwordTemporanea: temporaryPassword
+                );
+
+                response.StatusCode = HttpStatusCode.OK;
+                response.IsSuccess = true;
+                response.Result = Costanti.DatabaseOK;
+                return response;
             }
-            catch (Exception e)
+            catch (Exception ex)
             {
-                _logger.LogError(e, e.Message, e.InnerException);
-                response.IsSuccess = false;
-                response.ErrorMessages = new List<string> { e.Message, e.InnerException.Message };
+                _logger.LogError(ex, "Errore in Upsert");
                 response.StatusCode = HttpStatusCode.InternalServerError;
+                response.IsSuccess = false;
+                response.ErrorMessages = new List<string> { ex.Message };
+                return response;
             }
-            return response;
         }
+
 
         public async Task<APIResponse> Login(LoginRequestDTO loginRequestDTO)
         {
@@ -214,7 +233,7 @@ namespace gestionale_scalzo.Repository
                 };
 
                 user.RefreshToken = refreshToken.Result;
-                user.RefreshTokenExpirationDate = DateTime.Now.AddMinutes(_jwtSettings.RefreshTokenExpirationMinutes);
+                user.RefreshTokenExpirationDate = DateTime.UtcNow.AddMinutes(_jwtSettings.RefreshTokenExpirationMinutes);
                 _db.SaveChanges();
 
                 response.Result = loginResponseDTO;
@@ -482,6 +501,8 @@ namespace gestionale_scalzo.Repository
 
                             await _userManager.ResetPasswordAsync(user, token, temporaryPassword);
 
+                            _logger.LogInformation($"Password temporanea generata per l'utente {user.UserName}: {temporaryPassword}");  
+
                             result = await _userManager.UpdateAsync(user);
                         }
                     }
@@ -566,81 +587,55 @@ namespace gestionale_scalzo.Repository
         {
             try
             {
-                // Escludi la tua email specifica
+                //Escludi la tua email specifica
                 //if (toEmail.Equals("r.marco9633@gmail.com", StringComparison.OrdinalIgnoreCase))
                 //{
                 //    _logger.LogInformation($"Email esclusa per destinatario: {toEmail}");
                 //    return Costanti.DatabaseOK; // Ritorna successo senza inviare
                 //}
 
-                //string htmlBody = string.Empty;
-                //string body = string.Empty;
-                //string agente = string.Empty;
-                //string cliente = string.Empty;
+                string htmlBody = string.Empty;
+                string body = string.Empty;
+                string agente = string.Empty;
+                string cliente = string.Empty;
 
-                //using (StreamReader reader = new StreamReader(Path.Combine(_env.WebRootPath, _configuration.GetValue<string>("PATHTEMPLATEMODELLIEMAIL")) + template + ".html"))
-                //{
-                //    htmlBody = reader.ReadToEnd().ToString();
-                //    string portalLink = _configuration.GetValue<string>("URL");
+                using (StreamReader reader = new StreamReader(Path.Combine(_env.WebRootPath, _configuration.GetValue<string>("PATHTEMPLATEMODELLIEMAIL")) + template + ".html"))
+                {
+                    htmlBody = reader.ReadToEnd().ToString();
+                    string portalLink = _configuration.GetValue<string>("URL");
 
-                //    switch (template)
-                //    {
-                //        case "EmailNotifica":
-                //            body = String.Format(htmlBody, userName, comunicazione.Messaggio, portalLink, DateTime.Now.Year);
-                //            break;
-                //        case "EmailBenvenuto":
-                //            body = String.Format(htmlBody, userName, userName, passwordTemporanea, portalLink, DateTime.Now.Year);
-                //            break;
-                //        case "EmailModificaPassword":
-                //            body = String.Format(htmlBody, userName, userName, passwordTemporanea, portalLink, DateTime.Now.Year);
-                //            break;
-                //        case "EmailModificaDatiUtente":
-                //            body = String.Format(htmlBody, userName, portalLink, DateTime.Now.Year);
-                //            break;
-                //        case "EmailContrattoInScadenza":
-                //            agente = contratto.ApplicationUsers.Name + " " + contratto.ApplicationUsers.Surname;
-                //            cliente = !string.IsNullOrEmpty(contratto.Client.Name) && !string.IsNullOrEmpty(contratto.Client.Surname)
-                //            ? $"{contratto.Client.Name} {contratto.Client.Surname}" : contratto.Client.TaxCode;
-                //            body = String.Format(htmlBody, userName, contratto.IdPratica, contratto.DataInserimento.ToString("dd-MM-yyyy"), contratto.DataScadenza.ToString("dd-MM-yyyy"), agente, cliente, contratto.Prodotto.Descrizione, contratto.Note, portalLink, DateTime.Now.Year);
-                //            break;
-                //        case "EmailAggiuntaContratto":
-                //            agente = contratto.ApplicationUsers.Name + " " + contratto.ApplicationUsers.Surname;
-                //            cliente = !string.IsNullOrEmpty(contratto.Client.Name) && !string.IsNullOrEmpty(contratto.Client.Surname)
-                //            ? $"{contratto.Client.Name} {contratto.Client.Surname}" : contratto.Client.TaxCode;
-                //            body = String.Format(htmlBody, contratto.DataInserimento.ToString("dd-MM-yyyy"), agente, cliente, portalLink, DateTime.Now.Year);
-                //            subject = "Nuovo contratto aggiunto";
-                //            break;
-                //        case "EmailModificaContratto":
-                //            agente = contratto.ApplicationUsers.Name + " " + contratto.ApplicationUsers.Surname;
-                //            cliente = !string.IsNullOrEmpty(contratto.Client.Name) && !string.IsNullOrEmpty(contratto.Client.Surname)
-                //            ? $"{contratto.Client.Name} {contratto.Client.Surname}" : contratto.Client.TaxCode;
-                //            body = String.Format(htmlBody, contratto.IdPratica, contratto.DataInserimento.ToString("dd-MM-yyyy"), agente, cliente, contratto.Prodotto.Descrizione, contratto.Note, contratto.OrderStates.Descrizione, portalLink, DateTime.Now.Year);
-                //            subject = "Contratto Modificato";
-                //            break;
-                //    }
-                //}
+                    switch (template)
+                    {
+                        case "EmailBenvenuto":
+                            body = String.Format(htmlBody, userName, userName, passwordTemporanea, portalLink, DateTime.Now.Year);
+                            break;
+                        case "EmailModificaPassword":
+                            body = String.Format(htmlBody, userName, userName, passwordTemporanea, portalLink, DateTime.Now.Year);
+                            break;                        
+                    }
+                }
 
 
-                //{
-                //    ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls
-                //                                      | SecurityProtocolType.Tls11
-                //                                      | SecurityProtocolType.Tls12;
-                //}
+                {
+                    ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls
+                                                      | SecurityProtocolType.Tls11
+                                                      | SecurityProtocolType.Tls12;
+                }
 
-                //var client = new SmtpClient(_configuration.GetValue<string>("SMTP_SERVER"), _configuration.GetValue<int>("SMTP_PORT"))
-                //{
-                //    Credentials = new NetworkCredential(_configuration.GetValue<string>("SMTP_USERNAME"), _configuration.GetValue<string>("SMTP_PASSWORD")),
-                //    EnableSsl = true
-                //};
-                //// Create email message
-                //MailMessage mailMessage = new MailMessage();
-                //mailMessage.From = new MailAddress("backoffice@legendgroupsrl.it");
-                //mailMessage.To.Add(toEmail);
-                //mailMessage.Subject = subject;
-                //mailMessage.IsBodyHtml = true;
-                //mailMessage.Body = body.ToString();
-                //// Send email
-                //client.Send(mailMessage);
+                var client = new SmtpClient(_configuration.GetValue<string>("SMTP_SERVER"), _configuration.GetValue<int>("SMTP_PORT"))
+                {
+                    Credentials = new NetworkCredential(_configuration.GetValue<string>("SMTP_USERNAME"), _configuration.GetValue<string>("SMTP_PASSWORD")),
+                    EnableSsl = true
+                };
+                // Create email message
+                MailMessage mailMessage = new MailMessage();
+                mailMessage.From = new MailAddress("gestionale@scalzofruit.it");
+                mailMessage.To.Add(toEmail);
+                mailMessage.Subject = subject;
+                mailMessage.IsBodyHtml = true;
+                mailMessage.Body = body.ToString();
+                // Send email
+                client.Send(mailMessage);
 
                 return Costanti.DatabaseOK;
             }

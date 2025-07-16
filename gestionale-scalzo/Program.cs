@@ -26,11 +26,18 @@ builder.WebHost.ConfigureKestrel(options =>
     options.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(15);
 });
 
-builder.Host.UseSerilog((context, configuration) =>
-    configuration.ReadFrom.Configuration(context.Configuration));
+builder.Host.UseSerilog((context, configuration) => configuration.ReadFrom.Configuration(context.Configuration));
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
+
+builder.Services
+    .AddControllers()
+    .AddJsonOptions(opts =>
+    {
+        opts.JsonSerializerOptions.Converters.Add(new DateOnlyJsonConverter());
+        opts.JsonSerializerOptions.Converters.Add(new NullableDateOnlyJsonConverter());
+    });
 
 // Configurazione Swagger e HttpContextAccessor
 builder.Services.AddEndpointsApiExplorer();
@@ -90,6 +97,9 @@ builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
 builder.Services.AddScoped<IDbContextFactory<ApplicationDbContext>, DbContextFactory<ApplicationDbContext>>();
 builder.Services.AddScoped<ITokenUtility, TokenUtility>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddScoped<IClientRepository, ClientRepository>();
+builder.Services.AddScoped<IOrderRepository, OrderRepository>();
+builder.Services.AddScoped<ITypologyRepository, TypologyRepository>();
 
 // Automapper
 builder.Services.AddAutoMapper(typeof(MappingConfig));
@@ -139,43 +149,45 @@ builder.Services.AddResponseCompression(options =>
 
 var app = builder.Build();
 
-// Middleware
-if (app.Environment.IsDevelopment())
+app.UseSwagger(c =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
-else
-{
-    app.UseSwagger(c =>
+    // In Production aggiustiamo l'URL del server
+    if (!app.Environment.IsDevelopment())
     {
         c.PreSerializeFilters.Add((swaggerDoc, httpReq) =>
         {
             var serverUrl = $"https://{httpReq.Host.Value}";
-            swaggerDoc.Servers = new List<Microsoft.OpenApi.Models.OpenApiServer>
-        {
-            new OpenApiServer { Url = serverUrl }
-        };
+            swaggerDoc.Servers = new List<Microsoft.OpenApi.Models.OpenApiServer>()
+            {
+                new Microsoft.OpenApi.Models.OpenApiServer { Url = serverUrl }
+            };
         });
-    });
-    app.UseSwaggerUI();    
-}
+    }
+});
+app.UseSwaggerUI(c =>
+{
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "API V1");
+    c.RoutePrefix = "swagger";  // mantiene /swagger/ come path
+});
 
-// Serve i file statici
-app.UseStaticFiles();
-
-// Fallback per la tua SPA (Angular)
-app.MapFallbackToFile("/index.html");
-
+// 2) CORS
 app.UseCors(x => x
     .AllowAnyOrigin()
     .AllowAnyMethod()
     .AllowAnyHeader());
 
+// 3) File statici
+app.UseStaticFiles();
+
+// 4) Routing + Auth
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// 5) Map controller API (/api/...)
 app.MapControllers();
 
-app.Run();
+// 6) Fallback per SPA Angular: qualsiasi altra rotta → index.html
+app.MapFallbackToFile("/index.html");
 
+app.Run();

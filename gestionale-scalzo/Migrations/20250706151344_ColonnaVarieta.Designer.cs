@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using gestionale_scalzo.Data;
@@ -11,9 +12,11 @@ using gestionale_scalzo.Data;
 namespace gestionale_scalzo.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250706151344_ColonnaVarieta")]
+    partial class ColonnaVarieta
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -312,10 +315,7 @@ namespace gestionale_scalzo.Migrations
                         .HasColumnType("text");
 
                     b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("Name")
                         .HasColumnType("text");
@@ -351,17 +351,17 @@ namespace gestionale_scalzo.Migrations
                     b.Property<string>("CompagniaTrasporto")
                         .HasColumnType("text");
 
-                    b.Property<DateOnly>("DataInserimento")
-                        .HasColumnType("date");
+                    b.Property<DateTime>("DataInserimento")
+                        .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateOnly>("DataPartenza")
-                        .HasColumnType("date");
+                    b.Property<DateTime?>("DataPartenza")
+                        .HasColumnType("timestamp with time zone");
 
-                    b.Property<float>("KiliNetti")
-                        .HasColumnType("real");
+                    b.Property<int>("KiliNetti")
+                        .HasColumnType("integer");
 
-                    b.Property<float>("KiliTotali")
-                        .HasColumnType("real");
+                    b.Property<int>("KiliTotali")
+                        .HasColumnType("integer");
 
                     b.Property<int>("NumeroCassette")
                         .HasColumnType("integer");
@@ -375,17 +375,14 @@ namespace gestionale_scalzo.Migrations
                     b.Property<int>("NumeroPedane")
                         .HasColumnType("integer");
 
-                    b.Property<float>("Peso")
-                        .HasColumnType("real");
+                    b.Property<int>("Peso")
+                        .HasColumnType("integer");
 
-                    b.Property<float>("PesoCassetta")
-                        .HasColumnType("real");
+                    b.Property<int>("PesoCassetta")
+                        .HasColumnType("integer");
 
-                    b.Property<float>("PrezzoOrdine")
-                        .HasColumnType("real");
-
-                    b.Property<string>("Scarico")
-                        .HasColumnType("text");
+                    b.Property<int>("PrezzoOrdine")
+                        .HasColumnType("integer");
 
                     b.Property<int>("TipologiaBancaleId")
                         .HasColumnType("integer");
@@ -402,6 +399,12 @@ namespace gestionale_scalzo.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Cliente");
+
+                    b.HasIndex("TipologiaBancaleId");
+
+                    b.HasIndex("TipologiaCassetteId");
+
+                    b.HasIndex("TipologiaPedaneId");
 
                     b.ToTable("Orders");
                 });
@@ -511,7 +514,31 @@ namespace gestionale_scalzo.Migrations
                         .WithMany()
                         .HasForeignKey("Cliente");
 
+                    b.HasOne("gestionale_scalzo.Model.Tipologia", "TipologiaBancale")
+                        .WithMany()
+                        .HasForeignKey("TipologiaBancaleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("gestionale_scalzo.Model.Tipologia", "TipologiaCassette")
+                        .WithMany()
+                        .HasForeignKey("TipologiaCassetteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("gestionale_scalzo.Model.Tipologia", "TipologiaPedane")
+                        .WithMany()
+                        .HasForeignKey("TipologiaPedaneId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.Navigation("Client");
+
+                    b.Navigation("TipologiaBancale");
+
+                    b.Navigation("TipologiaCassette");
+
+                    b.Navigation("TipologiaPedane");
                 });
 
             modelBuilder.Entity("gestionale_scalzo.Model.RefreshToken", b =>
