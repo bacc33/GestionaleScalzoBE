@@ -8,18 +8,18 @@
         public int NumeroColli { get; set; }
         public int NumeroPedane { get; set; }
         public int NumeroCassette { get; set; }
-        public int PesoCassetta { get; set; }
-        public int Peso { get; set; }
+        public float PesoCassetta { get; set; }
+        public float Peso { get; set; }
         public int TipologiaPedane { get; set; }
         public int TipologiaCassette { get; set; }
         public int TipologiaBancale { get; set; }
-        public int KiliNetti { get; set; }
-        public int KiliTotali { get; set; }
+        public float KiliNetti { get; set; }
+        public float KiliTotali { get; set; }
         public string? Scarico { get; set; }
         public string Varieta { get; set; }
         public DateOnly DataInserimento { get; set; }
         public DateOnly DataPartenza { get; set; }
-        public int PrezzoOrdine { get; set; }
+        public float PrezzoOrdine { get; set; }
         public string CompagniaTrasporto { get; set; }
 
         public override string ToString()
